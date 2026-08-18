@@ -1,127 +1,259 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Transmissão de Tela ao Vivo</title>
-    <style>
-        body { font-family: Arial, sans-serif; background: #121212; color: #fff; text-align: center; margin: 0; padding: 20px; }
-        #controls { margin: 20px 0; }
-        input, button { padding: 10px; font-size: 16px; margin: 5px; border-radius: 5px; border: none; }
-        button { background: #6200ea; color: white; cursor: pointer; }
-        button:hover { background: #3700b3; }
-        video { width: 80%; max-width: 900px; background: #000; border-radius: 8px; margin-top: 10px; }
-        .hidden { display: none; }
-        #status { font-weight: bold; margin: 10px; color: #00e676; }
-    </style>
-    <!-- Importando o PeerJS para conexões P2P direto no navegador -->
-    <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Discord Privado</title>
+  <!-- PeerJS para chamadas de Voz/Vídeo/Tela grátis -->
+  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+    body { background-color: #313338; color: #dbdee1; height: 100vh; display: flex; align-items: center; justify-content: center; }
+
+    /* Tela de Login */
+    #login-screen { background: #2b2d31; padding: 30px; border-radius: 8px; width: 320px; box-shadow: 0 4px 15px rgba(0,0,0,0.4); text-align: center; }
+    #login-screen h2 { color: #f2f3f5; margin-bottom: 20px; }
+    #login-screen input { width: 100%; padding: 10px; margin-bottom: 15px; border-radius: 4px; border: none; background: #1e1f22; color: #fff; }
+    #login-screen button { width: 100%; padding: 10px; border-radius: 4px; border: none; background: #5865f2; color: #fff; font-weight: bold; cursor: pointer; }
+    #login-screen button:hover { background: #4752c4; }
+
+    /* Layout do Discord */
+    #app { display: none; width: 100vw; height: 100vh; grid-template-columns: 240px 1fr 200px; grid-template-rows: 1fr 80px; }
+
+    /* Lateral: Canais */
+    .sidebar { background: #2b2d31; padding: 15px; border-right: 1px solid #1e1f22; }
+    .channel { padding: 10px; border-radius: 4px; color: #949ba4; cursor: pointer; margin-bottom: 5px; }
+    .channel.active { background: #35373c; color: #f2f3f5; }
+
+    /* Área Central: Chat e Transmissões */
+    .main-area { display: flex; flex-direction: column; background: #313338; overflow: hidden; }
+    .video-grid { display: flex; flex-wrap: wrap; gap: 10px; padding: 15px; background: #1e1f22; min-height: 200px; max-height: 50%; overflow-y: auto; }
+    .video-card { background: #000; border-radius: 8px; overflow: hidden; position: relative; flex: 1 1 200px; max-width: 400px; height: 200px; }
+    .video-card video { width: 100%; height: 100%; object-fit: cover; }
+    .video-card .tag { position: absolute; bottom: 5px; left: 5px; background: rgba(0,0,0,0.6); padding: 2px 6px; border-radius: 4px; font-size: 12px; }
+
+    /* Chat */
+    .chat-area { flex: 1; display: flex; flex-direction: column; padding: 15px; overflow: hidden; }
+    .messages { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; margin-bottom: 10px; }
+    .msg { background: #2b2d31; padding: 8px 12px; border-radius: 6px; width: fit-content; max-width: 80%; }
+    .msg .author { font-weight: bold; font-size: 12px; color: #f2f3f5; margin-bottom: 3px; }
+    .chat-input { display: flex; gap: 10px; }
+    .chat-input input { flex: 1; padding: 10px; border-radius: 4px; border: none; background: #383a40; color: #fff; }
+    .chat-input button { padding: 10px 20px; border-radius: 4px; border: none; background: #5865f2; color: #fff; cursor: pointer; }
+
+    /* Lista de Usuários Conectados */
+    .user-list { background: #2b2d31; padding: 15px; border-left: 1px solid #1e1f22; }
+    .user-item { padding: 5px 0; color: #949ba4; display: flex; align-items: center; gap: 8px; }
+    .badge-admin { background: #f0b232; color: #000; font-size: 10px; padding: 2px 4px; border-radius: 3px; font-weight: bold; }
+
+    /* Barra de Controles (Sempre Visível) */
+    .controls { grid-column: 1 / -1; background: #1e1f22; display: flex; align-items: center; justify-content: center; gap: 15px; padding: 0 20px; }
+    .btn-control { padding: 10px 15px; border-radius: 4px; border: none; background: #2b2d31; color: #fff; cursor: pointer; font-weight: bold; }
+    .btn-control.active { background: #23a55a; }
+    .btn-control.danger { background: #f23f43; }
+  </style>
 </head>
 <body>
 
-    <h1>Transmissão de Tela</h1>
-    <div id="status">Conectando...</div>
+  <!-- TELA DE LOGIN -->
+  <div id="login-screen">
+    <h2>Entrar no Discord</h2>
+    <input type="text" id="username" placeholder="Seu Nome/Nick">
+    <input type="password" id="access-key" placeholder="Sua Senha de Acesso">
+    <button onclick="login()">Entrar</button>
+  </div>
 
-    <div id="controls" class="hidden">
-        <input type="password" id="passwordInput" placeholder="Senha da transmissão">
-        <button id="startBtn">Iniciar Transmissão</button>
+  <!-- APLICAÇÃO -->
+  <div id="app">
+    <!-- BARRA LATERAL CANAIS -->
+    <div class="sidebar">
+      <div class="channel active">🔊 Geral (Voz e Vídeo)</div>
+      <div class="channel active">💬 Chat-Geral</div>
     </div>
 
-    <div>
-        <video id="video" autoplay playsinline controls></video>
+    <!-- ÁREA PRINCIPAL -->
+    <div class="main-area">
+      <!-- MÍDIAS / STREAMS -->
+      <div class="video-grid" id="video-grid"></div>
+
+      <!-- CHAT -->
+      <div class="chat-area">
+        <div class="messages" id="messages"></div>
+        <div class="chat-input">
+          <input type="text" id="msg-input" placeholder="Enviar mensagem..." onkeydown="if(event.key === 'Enter') sendMsg()">
+          <button onclick="sendMsg()">Enviar</button>
+        </div>
+      </div>
     </div>
 
-    <script>
-        // Mude esta senha para a que você quiser
-        const SENHA_MESTRE = "123456"; 
-        
-        // ID fixo que define a nossa sala (altere se quiser algo único)
-        const SALA_ID = "stream-principal-gabriel701663"; 
+    <!-- LISTA DE MEMBROS -->
+    <div class="user-list">
+      <h4 style="margin-bottom: 10px; color: #949ba4; font-size: 12px;">ONLINE</h4>
+      <div id="online-users"></div>
+    </div>
 
-        const statusDiv = document.getElementById('status');
-        const controlsDiv = document.getElementById('controls');
-        const startBtn = document.getElementById('startBtn');
-        const passwordInput = document.getElementById('passwordInput');
-        const video = document.getElementById('video');
+    <!-- CONTROLES DA CALL -->
+    <div class="controls">
+      <button class="btn-control" id="btn-mic" onclick="toggleMic()">🎤 Mutar Mic</button>
+      <button class="btn-control" id="btn-cam" onclick="toggleCam()">📹 Ligar Câmera</button>
+      <button class="btn-control" id="btn-screen" onclick="toggleScreen()">🖥️ Transmitir Tela</button>
+    </div>
+  </div>
 
-        let peer = new Peer();
-        let localStream = null;
+  <script>
+    // LISTA DE SENHAS VALIDADAS
+    const ADMIN_KEY = "54546";
+    const USER_KEYS = ["6548", "21657", "236995", "43802", "48563", "267548", "3263489"];
 
-        peer.on('open', (id) => {
-            statusDiv.innerText = "Pronto. Verificando se há transmissão...";
-            verificarSeTransmissorExiste();
+    let peer = null;
+    let myStream = null;
+    let myName = "";
+    let isAdmin = false;
+    let activeConnections = {};
+    let activeCalls = {};
+
+    function login() {
+      const name = document.getElementById('username').value.trim();
+      const key = document.getElementById('access-key').value.trim();
+
+      if (!name) return alert("Digite seu nome!");
+
+      if (key === ADMIN_KEY) {
+        isAdmin = true;
+      } else if (USER_KEYS.includes(key)) {
+        isAdmin = false;
+      } else {
+        return alert("Senha de acesso inválida!");
+      }
+
+      myName = name;
+      document.getElementById('login-screen').style.display = 'none';
+      document.getElementById('app').style.display = 'grid';
+
+      initPeer();
+    }
+
+    function initPeer() {
+      // Criando um ID único baseado na senha e nome para conectar a sala
+      const peerId = "discord-room-p2p-" + encodeURIComponent(myName) + "-" + Math.floor(Math.random()*1000);
+      peer = new Peer(peerId);
+
+      peer.on('open', (id) => {
+        addUserToList(myName, isAdmin, true);
+        setupAudioOnlyStream();
+      });
+
+      // Receber Chamadas (Áudio/Vídeo/Tela)
+      peer.on('call', (call) => {
+        call.answer(myStream);
+        call.on('stream', (remoteStream) => {
+          addVideoElement(call.peer, remoteStream);
         });
+      });
 
-        async function verificarSeTransmissorExiste() {
-            // Tenta se conectar ao transmissor da sala
-            const conn = peer.connect(SALA_ID + "-sinal");
-            
-            conn.on('open', () => {
-                // Se conectou, significa que o transmissor ESTÁ LIGADO
-                statusDiv.innerText = "Assistindo à transmissão ao vivo!";
-                controlsDiv.classList.add('hidden');
-                
-                // Pede o vídeo para o transmissor
-                const call = peer.call(SALA_ID + "-media", localStream);
-                call.on('stream', (remoteStream) => {
-                    video.srcObject = remoteStream;
-                });
-            });
+      // Receber Mensagens de Chat
+      peer.on('connection', (conn) => {
+        conn.on('data', (data) => {
+          if (data.type === 'chat') {
+            appendMessage(data.author, data.text);
+          }
+        });
+      });
+    }
 
-            conn.on('error', () => {
-                liberarPainelTransmissor();
-            });
+    function setupAudioOnlyStream() {
+      navigator.mediaDevices.getUserMedia({ audio: true, video: false })
+        .then((stream) => {
+          myStream = stream;
+          addVideoElement("Você", stream, true);
+        })
+        .catch(err => alert("Erro ao acessar microfone: " + err));
+    }
 
-            // Se demorar 2 segundos e não conectar, assume que não há transmissão e libera o painel para você
-            setTimeout(() => {
-                if (statusDiv.innerText.includes("Verificando")) {
-                    liberarPainelTransmissor();
-                }
-            }, 2000);
-        }
+    // ADICIONAR MÍDIA NA TELA
+    function addVideoElement(peerId, stream, isSelf = false) {
+      let grid = document.getElementById('video-grid');
+      let card = document.getElementById('card-' + peerId);
 
-        function liberarPainelTransmissor() {
-            statusDiv.innerText = "Nenhuma transmissão ativa. Digite a senha para transmitir.";
-            controlsDiv.classList.remove('hidden');
-        }
+      if (!card) {
+        card = document.createElement('div');
+        card.className = 'video-card';
+        card.id = 'card-' + peerId;
 
-        // Se você clicar em transmitir
-        startBtn.onclick = async () => {
-            if (passwordInput.value !== SENHA_MESTRE) {
-                alert("Senha incorreta!");
-                return;
-            }
+        const video = document.createElement('video');
+        video.srcObject = stream;
+        video.autoplay = true;
+        if (isSelf) video.muted = true; // Muta o próprio som para não dar eco
 
-            try {
-                localStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
-                video.srcObject = localStream;
-                
-                controlsDiv.classList.add('hidden');
-                statusDiv.innerText = "Você está transmitindo sua tela!";
+        const tag = document.createElement('div');
+        tag.className = 'tag';
+        tag.innerText = isSelf ? `${myName} (Você)` : peerId.split('-')[3] || 'Usuário';
 
-                // Cria o peer exclusivo do transmissor
-                const hostPeer = new Peer(SALA_ID + "-sinal");
-                const mediaPeer = new Peer(SALA_ID + "-media");
+        card.appendChild(video);
+        card.appendChild(tag);
+        grid.appendChild(card);
+      } else {
+        card.querySelector('video').srcObject = stream;
+      }
+    }
 
-                hostPeer.on('connection', (conn) => {
-                    conn.on('open', () => {
-                        conn.send({ status: 'online' });
-                    });
-                });
+    // CONTROLES DE ÁUDIO E VÍDEO
+    function toggleMic() {
+      if (!myStream) return;
+      const audioTrack = myStream.getAudioTracks()[0];
+      if (audioTrack) {
+        audioTrack.enabled = !audioTrack.enabled;
+        const btn = document.getElementById('btn-mic');
+        btn.innerText = audioTrack.enabled ? "🎤 Mutar Mic" : "🎙️ Desmutado";
+        btn.classList.toggle('danger', !audioTrack.enabled);
+      }
+    }
 
-                mediaPeer.on('call', (call) => {
-                    call.answer(localStream);
-                });
+    function toggleCam() {
+      navigator.mediaDevices.getUserMedia({ video: true, audio: true }).then((stream) => {
+        myStream = stream;
+        addVideoElement("Você", stream, true);
+      });
+    }
 
-                // Se você fechar a aba ou parar o compartilhamento pelo botão do navegador
-                localStream.getVideoTracks()[0].onended = () => {
-                    window.location.reload();
-                };
+    function toggleScreen() {
+      navigator.mediaDevices.getDisplayMedia({ video: true, audio: true }).then((screenStream) => {
+        myStream = screenStream;
+        addVideoElement("Você", screenStream, true);
+      });
+    }
 
-            } catch (err) {
-                alert("Permissão negada ou erro ao capturar tela.");
-            }
-        };
-    </script>
+    // CHAT
+    function sendMsg() {
+      const input = document.getElementById('msg-input');
+      const text = input.value.trim();
+      if (!text) return;
+
+      appendMessage(myName, text);
+      input.value = '';
+
+      // Dispara para outras conexões ativas
+      Object.values(activeConnections).forEach(conn => {
+        conn.send({ type: 'chat', author: myName, text: text });
+      });
+    }
+
+    function appendMessage(author, text) {
+      const box = document.getElementById('messages');
+      const msg = document.createElement('div');
+      msg.className = 'msg';
+      msg.innerHTML = `<div class="author">${author}</div><div>${text}</div>`;
+      box.appendChild(msg);
+      box.scrollTop = box.scrollHeight;
+    }
+
+    function addUserToList(name, admin, isSelf) {
+      const list = document.getElementById('online-users');
+      const item = document.createElement('div');
+      item.className = 'user-item';
+      item.innerHTML = `🟢 ${name} ${admin ? '<span class="badge-admin">ADM</span>' : ''}`;
+      list.appendChild(item);
+    }
+  </script>
 </body>
 </html>
