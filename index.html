@@ -3,46 +3,125 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Transmissão Simples</title>
+    <title>Transmissão de Tela ao Vivo</title>
     <style>
-        body { font-family: Arial, sans-serif; background: #121212; color: #fff; text-align: center; padding: 20px; }
-        video { width: 80%; max-width: 800px; background: #000; margin-top: 15px; border-radius: 8px; }
-        button, input { padding: 10px; font-size: 16px; margin: 5px; }
+        body { font-family: Arial, sans-serif; background: #121212; color: #fff; text-align: center; margin: 0; padding: 20px; }
+        #controls { margin: 20px 0; }
+        input, button { padding: 10px; font-size: 16px; margin: 5px; border-radius: 5px; border: none; }
+        button { background: #6200ea; color: white; cursor: pointer; }
+        button:hover { background: #3700b3; }
+        video { width: 80%; max-width: 900px; background: #000; border-radius: 8px; margin-top: 10px; }
+        .hidden { display: none; }
+        #status { font-weight: bold; margin: 10px; color: #00e676; }
     </style>
+    <!-- Importando o PeerJS para conexões P2P direto no navegador -->
+    <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 </head>
 <body>
-    <h1>Transmissão de Tela Local</h1>
-    <div id="setup">
-        <input type="password" id="pass" placeholder="Senha (123)">
-        <button onclick="iniciar()">Transmitir Minha Tela</button>
+
+    <h1>Transmissão de Tela</h1>
+    <div id="status">Conectando...</div>
+
+    <div id="controls" class="hidden">
+        <input type="password" id="passwordInput" placeholder="Senha da transmissão">
+        <button id="startBtn">Iniciar Transmissão</button>
     </div>
-    <br>
-    <video id="preview" autoplay playsinline controls></video>
+
+    <div>
+        <video id="video" autoplay playsinline controls></video>
+    </div>
 
     <script>
-        const senhaCorreta = "123"; // Defina sua senha aqui
+        // Mude esta senha para a que você quiser
+        const SENHA_MESTRE = "123456"; 
+        
+        // ID fixo que define a nossa sala (altere se quiser algo único)
+        const SALA_ID = "stream-principal-gabriel701663"; 
 
-        async function iniciar() {
-            const digitada = document.getElementById('pass').value;
-            if (digitada !== senhaCorreta) {
+        const statusDiv = document.getElementById('status');
+        const controlsDiv = document.getElementById('controls');
+        const startBtn = document.getElementById('startBtn');
+        const passwordInput = document.getElementById('passwordInput');
+        const video = document.getElementById('video');
+
+        let peer = new Peer();
+        let localStream = null;
+
+        peer.on('open', (id) => {
+            statusDiv.innerText = "Pronto. Verificando se há transmissão...";
+            verificarSeTransmissorExiste();
+        });
+
+        async function verificarSeTransmissorExiste() {
+            // Tenta se conectar ao transmissor da sala
+            const conn = peer.connect(SALA_ID + "-sinal");
+            
+            conn.on('open', () => {
+                // Se conectou, significa que o transmissor ESTÁ LIGADO
+                statusDiv.innerText = "Assistindo à transmissão ao vivo!";
+                controlsDiv.classList.add('hidden');
+                
+                // Pede o vídeo para o transmissor
+                const call = peer.call(SALA_ID + "-media", localStream);
+                call.on('stream', (remoteStream) => {
+                    video.srcObject = remoteStream;
+                });
+            });
+
+            conn.on('error', () => {
+                liberarPainelTransmissor();
+            });
+
+            // Se demorar 2 segundos e não conectar, assume que não há transmissão e libera o painel para você
+            setTimeout(() => {
+                if (statusDiv.innerText.includes("Verificando")) {
+                    liberarPainelTransmissor();
+                }
+            }, 2000);
+        }
+
+        function liberarPainelTransmissor() {
+            statusDiv.innerText = "Nenhuma transmissão ativa. Digite a senha para transmitir.";
+            controlsDiv.classList.remove('hidden');
+        }
+
+        // Se você clicar em transmitir
+        startBtn.onclick = async () => {
+            if (passwordInput.value !== SENHA_MESTRE) {
                 alert("Senha incorreta!");
                 return;
             }
 
             try {
-                const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
-                const videoElement = document.getElementById('preview');
-                videoElement.srcObject = stream;
+                localStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+                video.srcObject = localStream;
+                
+                controlsDiv.classList.add('hidden');
+                statusDiv.innerText = "Você está transmitindo sua tela!";
 
-                // Se fechar a aba ou parar o compartilhamento pelo navegador, limpa a tela
-                stream.getVideoTracks()[0].onended = () => {
-                    videoElement.srcObject = null;
-                    alert("Transmissão encerrada.");
+                // Cria o peer exclusivo do transmissor
+                const hostPeer = new Peer(SALA_ID + "-sinal");
+                const mediaPeer = new Peer(SALA_ID + "-media");
+
+                hostPeer.on('connection', (conn) => {
+                    conn.on('open', () => {
+                        conn.send({ status: 'online' });
+                    });
+                });
+
+                mediaPeer.on('call', (call) => {
+                    call.answer(localStream);
+                });
+
+                // Se você fechar a aba ou parar o compartilhamento pelo botão do navegador
+                localStream.getVideoTracks()[0].onended = () => {
+                    window.location.reload();
                 };
-            } catch (e) {
-                alert("Erro ao capturar a tela.");
+
+            } catch (err) {
+                alert("Permissão negada ou erro ao capturar tela.");
             }
-        }
+        };
     </script>
 </body>
 </html>
