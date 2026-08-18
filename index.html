@@ -3,139 +3,46 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Transmissão de Tela ao Vivo</title>
+    <title>Transmissão Simples</title>
     <style>
-        body { font-family: Arial, sans-serif; background: #121212; color: #fff; text-align: center; margin: 0; padding: 20px; }
-        #controls { margin: 20px 0; }
-        input, button { padding: 10px; font-size: 16px; margin: 5px; border-radius: 5px; border: none; }
-        button { background: #6200ea; color: white; cursor: pointer; }
-        button:hover { background: #3700b3; }
-        video { width: 80%; max-width: 900px; background: #000; border-radius: 8px; margin-top: 10px; }
-        .hidden { display: none; }
-        #status { font-weight: bold; margin: 10px; }
+        body { font-family: Arial, sans-serif; background: #121212; color: #fff; text-align: center; padding: 20px; }
+        video { width: 80%; max-width: 800px; background: #000; margin-top: 15px; border-radius: 8px; }
+        button, input { padding: 10px; font-size: 16px; margin: 5px; }
     </style>
 </head>
 <body>
-
-    <h1>Transmissão de Tela</h1>
-    <div id="status">Aguardando transmissão...</div>
-
-    <div id="controls">
-        <input type="password" id="passwordInput" placeholder="Digite a senha para transmitir">
-        <button id="startBtn">Transmitir Minha Tela</button>
+    <h1>Transmissão de Tela Local</h1>
+    <div id="setup">
+        <input type="password" id="pass" placeholder="Senha (123)">
+        <button onclick="iniciar()">Transmitir Minha Tela</button>
     </div>
+    <br>
+    <video id="preview" autoplay playsinline controls></video>
 
-    <div>
-        <video id="video" autoplay playsinline controls></video>
-    </div>
-
-    <!-- Script do Socket.io -->
-    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
     <script>
-        // ALTERE AQUI para a URL do seu servidor backend hospedado
-        const SERVER_URL = "https://SEU-SERVIDOR.onrender.com"; 
+        const senhaCorreta = "123"; // Defina sua senha aqui
 
-        const socket = io(SERVER_URL);
-        const video = document.getElementById('video');
-        const startBtn = document.getElementById('startBtn');
-        const passwordInput = document.getElementById('passwordInput');
-        const statusDiv = document.getElementById('status');
-
-        let peerConnection;
-        const config = {
-            iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
-        };
-
-        // --- MODO TRANSMISSOR (VOCÊ) ---
-        startBtn.onclick = () => {
-            const senha = passwordInput.value;
-            socket.emit('broadcaster-auth', senha);
-        };
-
-        socket.on('auth-success', async () => {
-            alert('Autenticado com sucesso! Selecione a tela que deseja compartilhar.');
-            document.getElementById('controls').classList.add('hidden');
-            statusDiv.innerText = "Você está transmitindo sua tela.";
+        async function iniciar() {
+            const digitada = document.getElementById('pass').value;
+            if (digitada !== senhaCorreta) {
+                alert("Senha incorreta!");
+                return;
+            }
 
             try {
                 const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
-                video.srcObject = stream;
+                const videoElement = document.getElementById('preview');
+                videoElement.srcObject = stream;
 
-                // Se você clicar no botão "Parar Compartilhamento" nativo do navegador
+                // Se fechar a aba ou parar o compartilhamento pelo navegador, limpa a tela
                 stream.getVideoTracks()[0].onended = () => {
-                    window.location.reload();
+                    videoElement.srcObject = null;
+                    alert("Transmissão encerrada.");
                 };
-
-                socket.on('watcher', id => {
-                    peerConnection = new RTCPeerConnection(config);
-                    stream.getTracks().forEach(track => peerConnection.addTrack(track, stream));
-
-                    peerConnection.onicecandidate = event => {
-                        if (event.candidate) {
-                            socket.emit('candidate', id, event.candidate);
-                        }
-                    };
-
-                    peerConnection.createOffer()
-                        .стье => peerConnection.setLocalDescription(offer))
-                        .then(() => {
-                            socket.emit('offer', id, peerConnection.localDescription);
-                        });
-                });
-
-                socket.on('answer', (id, description) => {
-                    peerConnection.setRemoteDescription(new RTCSessionDescription(description));
-                });
-
-                socket.on('candidate', (id, candidate) => {
-                    peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
-                });
-
-            } catch (err) {
-                console.error("Erro ao capturar tela:", err);
-                alert("Permissão negada ou erro ao capturar tela.");
-                window.location.reload();
+            } catch (e) {
+                alert("Erro ao capturar a tela.");
             }
-        });
-
-        socket.on('auth-fail', (msg) => {
-            alert(msg);
-        });
-
-        // --- MODO ESPECTADOR (OUTRAS PESSOAS) ---
-        socket.emit('watcher');
-
-        socket.on('offer', async (id, description) => {
-            peerConnection = new RTCPeerConnection(config);
-            await peerConnection.setRemoteDescription(new RTCSessionDescription(description));
-            
-            const stream = new MediaStream();
-            video.srcObject = stream;
-
-            peerConnection.ontrack = event => {
-                stream.addTrack(event.track);
-            };
-
-            peerConnection.onicecandidate = event => {
-                if (event.candidate) {
-                    socket.emit('candidate', id, event.candidate);
-                }
-            };
-
-            const answer = await peerConnection.createAnswer();
-            await peerConnection.setLocalDescription(answer);
-            socket.emit('answer', id, answer);
-            statusDiv.innerText = "Assistindo à transmissão ao vivo!";
-        });
-
-        socket.on('live-stopped', () => {
-            statusDiv.innerText = "A transmissão foi encerrada.";
-            video.srcObject = null;
-        });
-
-        socket.on('live-started', () => {
-            window.location.reload(); // Atualiza para começar a ver quando iniciar
-        });
+        }
     </script>
 </body>
 </html>
